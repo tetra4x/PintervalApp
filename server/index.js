@@ -67,7 +67,7 @@ app.get('/auth/callback', async (req, res) => {
         "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/json"
       },
-      body
+      body: body.toString()  // ← これが最も重要！
     });
 
     const json = await tokenRes.json();
