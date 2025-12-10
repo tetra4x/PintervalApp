@@ -1,4 +1,14 @@
 更新履歴.txt
 
 2025-12-08 03:19:51 UTC
+- 初回リリース: 仕様書(Pinterval_仕様書.txt)に基づき、Webアプリ「Pinterval」を新規作成。
+- 開発方針.txtに基づくイベントバス（phase/priority/lock/Abort対応）を導入。
+- 左/中央/右カラムの3カラムレイアウト、スタンバイ/プレイの状態管理、カウントダウン・履歴サムネイル・操作ボタン（再生/一時停止・停止・次へ）を実装。
+- /api/search エンドポイント（Pinterest検索のプロキシ）。pidgets API を優先し、失敗時はフォールバック・モックに切替。
 
+
+2025-12-09 00:00:00 UTC
+- Pinterest API v5 対応: /api/search を Pinterest 公式 REST API v5 `search/pins` エンドポイント呼び出しに変更。旧 pidgets API と HTML スクレイピングのフォールバックを廃止。
+- API キーの扱いを仕様書どおり環境変数 `PINTEREST_ACCESS_TOKEN` 前提に整理。`USE_MOCK=1` でモック画像のみを返すモードを維持。
+- 再生履歴を Web ストレージ（localStorage）に保存するよう変更。ページ再読み込み後も右カラムのサムネイルから閲覧可能。
+- README を現行仕様（Pinterest API v5 / 環境変数 / モックモード）に合わせて更新。

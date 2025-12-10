@@ -16,12 +16,38 @@ const dom = {
   leftCol: document.getElementById('left-col')
 };
 
+
+
+const HISTORY_STORAGE_KEY = 'pinterval:history';
+
+function loadHistoryFromStorage() {
+  try {
+    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((u) => typeof u === 'string');
+  } catch (e) {
+    console.warn('Failed to load history from storage', e);
+    return [];
+  }
+}
+
+function saveHistoryToStorage(history) {
+  try {
+    const payload = Array.isArray(history) ? history.slice(-500) : [];
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(payload));
+  } catch (e) {
+    console.warn('Failed to save history to storage', e);
+  }
+}
+
 const state = {
   mode: 'standby', // 'standby' | 'play'
   items: /** @type {Array<{id:string,title:string,link:string|null,image:string}>} */ ([]),
   idx: -1,
   shownCount: 0,
-  history: /** @type {string[]} */ ([]),
+  history: /** @type {string[]} */ (loadHistoryFromStorage()),
   remainMs: 0,
   timerId: /** @type {number|null} */ (null)
 };
@@ -126,6 +152,7 @@ function showNext(resetCountdown) {
   const item = state.items[state.idx];
   renderViewer();
   state.history.push(item.image);
+  saveHistoryToStorage(state.history);
   state.shownCount += 1;
   dom.counter.textContent = String(state.shownCount);
   renderHistory();
@@ -162,6 +189,7 @@ bus.on('search:run', async (payload, ctx) => {
   state.items = items;
   state.idx = -1;
   state.history = [];
+  saveHistoryToStorage(state.history);
   state.shownCount = 0;
 }, { phase: 'main', priority: 0 });
 
@@ -206,3 +234,4 @@ window.addEventListener('keydown', (e) => {
 
 // Defaults
 dom.interval.value = '30';
+renderHistory();
