@@ -14,7 +14,12 @@ const cache = new Map();
 /* ============================================================
    Pinterest OAuth2 用設定
 ============================================================ */
-console.log("REDIRECT_URI:", process.env.PINTEREST_REDIRECT_URI);
+console.log("ENV CHECK:", {
+  CLIENT_ID: process.env.PINTEREST_CLIENT_ID ? "(set)" : "(undefined)",
+  CLIENT_SECRET: process.env.PINTEREST_CLIENT_SECRET ? "(set)" : "(undefined)",
+  REDIRECT_URI: process.env.PINTEREST_REDIRECT_URI ? "(set)" : "(undefined)"
+});
+
 const CLIENT_ID = process.env.PINTEREST_CLIENT_ID;
 const CLIENT_SECRET = process.env.PINTEREST_CLIENT_SECRET;
 const REDIRECT_URI = process.env.PINTEREST_REDIRECT_URI;
