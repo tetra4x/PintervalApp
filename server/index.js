@@ -153,6 +153,154 @@ function normalizePinsFromPinterest(json) {
       };
     })
     .filter((p) => !!p.image);
+
+/* ============================================================
+   /api/me/boards - ユーザーのボード一覧
+============================================================ */
+app.get('/api/me/boards', async (req, res) => {
+  const accessToken =
+    dynamicAccessToken || process.env.PINTEREST_ACCESS_TOKEN;
+
+  if (!accessToken) {
+    return res.status(500).json({
+      ok: false,
+      error: "Access Token がありません。/auth/login で認証してください。"
+    });
+  }
+
+  const params = new URLSearchParams({
+    page_size: '100'
+  });
+
+  try {
+    const endpoint = `https://api.pinterest.com/v5/boards?${params.toString()}`;
+    const pinterestRes = await fetchWithTimeout(endpoint, {
+      timeoutMs: 10000,
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    if (!pinterestRes.ok) {
+      const text = await pinterestRes.text();
+      console.error("Pinterest boards API error:", pinterestRes.status, text);
+      return res.status(502).json({ ok: false, error: "Pinterest API error (boards)" });
+    }
+
+    const json = await pinterestRes.json();
+    const items = Array.isArray(json?.items)
+      ? json.items.map((b) => ({
+          id: String(b.id),
+          name: b.name || '',
+          description: b.description || ''
+        }))
+      : [];
+
+    return res.json({ ok: true, items });
+  } catch (err) {
+    console.error("Pinterest boards request failed:", err);
+    return res.status(502).json({ ok: false, error: "Pinterest boards request failed" });
+  }
+});
+
+/* ============================================================
+   /api/me/pins - 自分の保存ピン一覧
+============================================================ */
+app.get('/api/me/pins', async (req, res) => {
+  const accessToken =
+    dynamicAccessToken || process.env.PINTEREST_ACCESS_TOKEN;
+
+  if (!accessToken) {
+    return res.status(500).json({
+      ok: false,
+      error: "Access Token がありません。/auth/login で認証してください。"
+    });
+  }
+
+  const rawLimit = Number(req.query.limit || 120);
+  const limit = Math.min(Math.max(rawLimit, 1), 120);
+
+  const params = new URLSearchParams({
+    page_size: String(Math.min(limit, 50))
+  });
+
+  try {
+    const endpoint = `https://api.pinterest.com/v5/pins?${params.toString()}`;
+    const pinterestRes = await fetchWithTimeout(endpoint, {
+      timeoutMs: 10000,
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    if (!pinterestRes.ok) {
+      const text = await pinterestRes.text();
+      console.error("Pinterest my pins API error:", pinterestRes.status, text);
+      return res.status(502).json({ ok: false, error: "Pinterest API error (pins)" });
+    }
+
+    const json = await pinterestRes.json();
+    const normalized = normalizePinsFromPinterest(json);
+    const items = normalized.slice(0, limit);
+
+    return res.json({ ok: true, items });
+  } catch (err) {
+    console.error("Pinterest my pins request failed:", err);
+    return res.status(502).json({ ok: false, error: "Pinterest my pins request failed" });
+  }
+});
+
+/* ============================================================
+   /api/boards/:boardId/pins - 特定ボードの保存ピン
+============================================================ */
+app.get('/api/boards/:boardId/pins', async (req, res) => {
+  const accessToken =
+    dynamicAccessToken || process.env.PINTEREST_ACCESS_TOKEN;
+
+  if (!accessToken) {
+    return res.status(500).json({
+      ok: false,
+      error: "Access Token がありません。/auth/login で認証してください。"
+    });
+  }
+
+  const rawLimit = Number(req.query.limit || 120);
+  const limit = Math.min(Math.max(rawLimit, 1), 120);
+  const boardId = req.params.boardId;
+
+  const params = new URLSearchParams({
+    page_size: String(Math.min(limit, 50))
+  });
+
+  try {
+    const endpoint = `https://api.pinterest.com/v5/boards/${encodeURIComponent(boardId)}/pins?${params.toString()}`;
+    const pinterestRes = await fetchWithTimeout(endpoint, {
+      timeoutMs: 10000,
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    if (!pinterestRes.ok) {
+      const text = await pinterestRes.text();
+      console.error("Pinterest board pins API error:", pinterestRes.status, text);
+      return res.status(502).json({ ok: false, error: "Pinterest API error (board pins)" });
+    }
+
+    const json = await pinterestRes.json();
+    const normalized = normalizePinsFromPinterest(json);
+    const items = normalized.slice(0, limit);
+
+    return res.json({ ok: true, items });
+  } catch (err) {
+    console.error("Pinterest board pins request failed:", err);
+    return res.status(502).json({ ok: false, error: "Pinterest board pins request failed" });
+  }
+});
+
 }
 
 /* ============================================================

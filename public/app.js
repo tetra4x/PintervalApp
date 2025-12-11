@@ -2,6 +2,8 @@ import { bus } from './eventBus.js';
 
 const dom = {
   theme: document.getElementById('theme'),
+  board: document.getElementById('board'),
+  order: document.getElementById('order'),
   interval: document.getElementById('interval'),
   counter: document.getElementById('counter'),
   btnSearch: document.getElementById('btn-search'),
@@ -55,18 +57,58 @@ const state = {
 const INTERVAL_OPTIONS = [10,15,20,30,40,50,60,90,120,180];
 
 function setLeftDisabled(disabled) {
-  dom.theme.disabled = disabled;
-  dom.interval.disabled = disabled;
-  dom.btnSearch.disabled = disabled;
+  if (dom.theme) dom.theme.disabled = disabled;
+  if (dom.board) dom.board.disabled = disabled;
+  if (dom.order) dom.order.disabled = disabled;
+  if (dom.interval) dom.interval.disabled = disabled;
+  if (dom.btnSearch) dom.btnSearch.disabled = disabled;
 }
 
 function ms(val) { return Math.max(0, Number(val) || 0) * 1000; }
 
 function formatMMSS(ms) {
   const total = Math.ceil(ms/1000);
-  const m = Math.floor(total/60);
-  const s = total%60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const mm = String(Math.floor(total / 60)).padStart(2, '0');
+  const ss = String(total % 60).padStart(2, '0');
+  return `${mm}:${ss}`;
+}
+
+function shuffleArray(arr) {
+  const copy = arr.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+async function loadBoards() {
+  if (!dom.board) return;
+  try {
+    const res = await fetch('/api/me/boards');
+    if (!res.ok) return;
+    const data = await res.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+
+    dom.board.innerHTML = '';
+    dom.board.insertAdjacentHTML('beforeend', '<option value="all">すべてのピン</option>');
+
+    if (!items.length) {
+      dom.board.insertAdjacentHTML('beforeend', '<option value="" disabled>ボードが見つかりません</option>');
+      return;
+    }
+
+    for (const b of items) {
+      const option = document.createElement('option');
+      option.value = b.id;
+      option.textContent = b.name || b.id;
+      dom.board.appendChild(option);
+    }
+  } catch (e) {
+    console.warn('Failed to load boards', e);
+  }
+}
+
 }
 
 function renderViewer() {
@@ -177,15 +219,42 @@ bus.on('search:run', async (payload, ctx) => {
 }, { phase: 'pre', priority: 10 });
 
 bus.on('search:run', async (payload, ctx) => {
-  // main: fetch
-  const q = payload.query;
+  // main: fetch 自分のピンから取得し、テーマと表示モードで整列
+  const q = payload.query.trim();
   const controller = new AbortController();
   ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
 
-  const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=120`, { signal: controller.signal });
-  if (!res.ok) throw new Error('検索に失敗しました。');
+  // どのエンドポイントを叩くか決定
+  const boardVal = dom.board ? dom.board.value : 'all';
+  let url = '';
+  if (!boardVal || boardVal === 'all') {
+    url = '/api/me/pins?limit=120';
+  } else {
+    url = `/api/boards/${encodeURIComponent(boardVal)}/pins?limit=120`;
+  }
+
+  const res = await fetch(url, { signal: controller.signal });
+  if (!res.ok) throw new Error('ピンの取得に失敗しました。');
   const data = await res.json();
-  const items = Array.isArray(data.items) ? data.items : [];
+  let items = Array.isArray(data.items) ? data.items : [];
+
+  // テーマでフィルタ（タイトルに含まれるもの）
+  if (q) {
+    const lower = q.toLowerCase();
+    items = items.filter((p) => {
+      const title = (p.title || '').toLowerCase();
+      return title.includes(lower);
+    });
+  }
+
+  // 表示モードに応じて並び替え
+  const order = dom.order ? dom.order.value : 'newest';
+  if (order === 'oldest') {
+    items = items.slice().reverse();
+  } else if (order === 'random') {
+    items = shuffleArray(items);
+  }
+
   state.items = items;
   state.idx = -1;
   state.history = [];
@@ -235,3 +304,4 @@ window.addEventListener('keydown', (e) => {
 // Defaults
 dom.interval.value = '30';
 renderHistory();
+loadBoards();

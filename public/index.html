@@ -19,6 +19,23 @@
       </div>
 
       <div class="field">
+        <label for="board">ボード</label>
+        <select id="board">
+          <option value="all">すべてのピン</option>
+          <option value="" disabled>--- ボード一覧はログイン後に表示 ---</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="order">表示モード</label>
+        <select id="order">
+          <option value="newest">新しい順</option>
+          <option value="oldest">古い順</option>
+          <option value="random">ランダム</option>
+        </select>
+      </div>
+
+      <div class="field">
         <label for="interval">表示間隔（秒）</label>
         <select id="interval">
           <option>10</option>
