@@ -36,12 +36,13 @@ app.get('/auth/login', (req, res) => {
     response_type: 'code',
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
-    scope: 'boards:read,pins:read'
+    scope: 'boards:read,pins:read,boards:read_secret,pins:read_secret'
   });
 
   const url = `https://www.pinterest.com/oauth/?${params.toString()}`;
   res.redirect(url);
 });
+
 
 
 /* ----------------------------------------
