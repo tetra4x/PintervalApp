@@ -16,9 +16,9 @@ const cache = new Map();
    Pinterest OAuth2 用設定
 ============================================================ */
 console.log("ENV CHECK:", {
-  CLIENT_ID: process.env.PINTEREST_CLIENT_ID ? "(set)" : "(undefined)",
-  CLIENT_SECRET: process.env.PINTEREST_CLIENT_SECRET ? "(set)" : "(undefined)",
-  REDIRECT_URI: process.env.PINTEREST_REDIRECT_URI ? "(set)" : "(undefined)"
+  CLIENT_ID: process.env.PINTEREST_CLIENT_ID,
+  CLIENT_SECRET: process.env.PINTEREST_CLIENT_SECRET,
+  REDIRECT_URI: process.env.PINTEREST_REDIRECT_URI
 });
 
 const CLIENT_ID = process.env.PINTEREST_CLIENT_ID;
@@ -36,8 +36,9 @@ app.get('/auth/login', (req, res) => {
     response_type: 'code',
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
-    scope: 'pins:read'
+    scope: 'boards:read,pins:read' // ←重要！
   });
+
 
   res.redirect(`https://www.pinterest.com/oauth/?${params.toString()}`);
 });
