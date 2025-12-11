@@ -36,12 +36,13 @@ app.get('/auth/login', (req, res) => {
     response_type: 'code',
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
-    scope: 'boards:read,pins:read' // ←重要！
+    scope: 'boards:read,pins:read'
   });
 
-
-  res.redirect(`https://www.pinterest.com/oauth/?${params.toString()}`);
+  const url = `https://www.pinterest.com/oauth/?${params.toString()}`;
+  res.redirect(url);
 });
+
 
 /* ----------------------------------------
    2) Callback → code を token に交換
@@ -49,58 +50,41 @@ app.get('/auth/login', (req, res) => {
 app.get('/auth/callback', async (req, res) => {
   const code = req.query.code;
 
-  console.log("▼ Received OAuth code:", code);
-
-  if (!code) {
-    return res.status(400).send("Missing authorization code");
-  }
-
   try {
+    const basicAuth = Buffer
+      .from(`${CLIENT_ID}:${CLIENT_SECRET}`)
+      .toString("base64");
+
     const params = new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
       redirect_uri: REDIRECT_URI
     });
-
-    console.log("▼ Sending token request body:", params.toString());
 
     const tokenRes = await fetch("https://api.pinterest.com/v5/oauth/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": `Basic ${basicAuth}`,
         "Accept": "application/json"
       },
       body: params.toString()
     });
 
-    const text = await tokenRes.text(); // ← JSON でなく raw で取得
-    console.log("▼ Pinterest raw response:", text);
-    console.log("▼ Status:", tokenRes.status);
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { parseError: true, raw: text };
-    }
+    const text = await tokenRes.text();
+    console.log("Pinterest response:", text);
 
     if (!tokenRes.ok) {
-      console.error("▼ Pinterest token error (parsed):", data);
-      return res.status(500).send(text);
+      return res.status(400).send(text);
     }
 
+    const data = JSON.parse(text);
     dynamicAccessToken = data.access_token;
 
-    return res.send(`
-      <h1>Access Token Get!</h1>
-      <p>${data.access_token}</p>
-    `);
-
-  } catch (err) {
-    console.error("▼ OAuth callback fatal error:", err);
-    res.status(500).send("OAuth callback failed");
+    return res.send("Token acquired!");
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("OAuth error");
   }
 });
 
