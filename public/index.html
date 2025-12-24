@@ -11,13 +11,11 @@
   <div id="app" class="layout">
     <!-- 左カラム -->
     <aside class="col left" id="left-col">
+      <button class="drawer-close mobile-only" id="btn-close-left" type="button" aria-label="左メニューを閉じる">✕</button>
       <h1 class="app-title">Pinterval</h1>
-
-      <div class="field">
-        <label for="theme">テーマ（Pinterest検索ワード）</label>
-        <input id="theme" type="text" placeholder="例）風景, cat, architecture">
-        </div>
-        <!-- テーマ検索機能は廃止 -->
+      <div class="login-area">
+        <button id="loginBtn" class="btn btn-primary">ログイン</button>
+      </div>
 
       <div class="field">
         <label for="board">ボード</label>
@@ -30,9 +28,9 @@
       <div class="field">
         <label for="order">表示モード</label>
         <select id="order">
+          <option value="random" selected>ランダム</option>
           <option value="newest">新しい順</option>
           <option value="oldest">古い順</option>
-          <option value="random">ランダム</option>
         </select>
       </div>
 
@@ -49,39 +47,68 @@
           <option>90</option>
           <option>120</option>
           <option>180</option>
+          <option>240</option>
+          <option selected>300</option>
+          <option>360</option>
+          <option>420</option>
+          <option>480</option>
+          <option>540</option>
+          <option>600</option>
+          <option>720</option>
+          <option>900</option>
         </select>
       </div>
 
-      <div class="field readonly">
-        <label>表示回数</label>
-        <div id="counter" class="counter">0</div>
-      </div>
 
       <div class="field">
-        <button id="btn-search" class="btn primary">検索して準備</button>
+        <label>カラーモード</label>
+        <div class="toggle-row" style="display: flex; align-items: center; justify-content: space-between;">
+          <span class="toggle-label" style="flex:1; text-align:left;">グレースケールを使用</span>
+          <label class="switch" title="グレースケール切り替え" style="margin-left:auto;">
+            <input id="toggle-grayscale" type="checkbox" aria-label="グレースケールモード">
+            <span class="slider"></span>
+          </label>
+        </div>
       </div>
 
-      <p class="note">※ プレイ中は左カラムの操作は無効化されます。</p>
+
+      <div style="height: 20px;"></div>
+
+      <div class="field">
+        <button id="btn-search" class="btn primary">スタート</button>
+      </div>
+
+      <p class="note">※ プレイ中は左カラムの操作は基本的に無効化されます（画像カラー切替は可能）。</p>
     </aside>
 
     <!-- 中央カラム（ビューワ） -->
     <main class="col center">
       <div id="viewer" class="viewer">
-        <img id="viewer-img" alt="表示中の画像">
+        <div class="mobile-menubar" aria-label="メニュー">
+          <button class="hamburger" id="btn-open-left" type="button" aria-label="左メニューを開く">☰</button>
+          <button class="hamburger" id="btn-open-right" type="button" aria-label="右メニューを開く">☰</button>
+        </div>
+        <img id="viewer-img" alt="" hidden>
+        <div id="gap-countdown" class="gap-countdown" hidden>3</div>
+        <div class="countdown-bar-container viewer-bar">
+          <div id="countdown-bar" class="countdown-bar"></div>
+        </div>
         <div class="controls" id="controls">
-          <button id="btn-play" class="ctrl" title="再生/一時停止">⏯</button>
+          <button id="btn-prev" class="ctrl" title="前へ">⏮</button>
+          <button id="btn-play" class="ctrl" title="再生/一時停止">▶</button>
           <button id="btn-stop" class="ctrl" title="停止">⏹</button>
           <button id="btn-next" class="ctrl" title="次へ">⏭</button>
         </div>
       </div>
-        <div class="field">
-          <!-- 検索ボタンも廃止 -->
-        </div>
+    </main>
+
+    <!-- ★★★ ここから右カラム ★★★ -->
+    <aside class="col right" id="right-col">
+      <button class="drawer-close mobile-only" id="btn-close-right" type="button" aria-label="右メニューを閉じる">✕</button>
       <div class="countdown-wrap">
         <div class="countdown-label">次の画像まで</div>
         <div id="countdown" class="countdown">00:00</div>
       </div>
-
       <div class="history">
         <div class="history-head">
           <span>履歴</span>
@@ -90,7 +117,10 @@
         <div id="thumbs" class="thumbs"></div>
       </div>
     </aside>
+
   </div>
+
+  <div id="drawer-overlay" class="drawer-overlay" hidden></div>
 
   <script type="module" src="./eventBus.js"></script>
   <script type="module" src="./app.js"></script>

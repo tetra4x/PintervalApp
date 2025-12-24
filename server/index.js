@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Readable } from 'stream';
 import { fetch } from 'undici';   // ← これが最重要（安定版 fetch）
 
 const __filename = fileURLToPath(import.meta.url);
@@ -82,7 +83,7 @@ app.get('/auth/callback', async (req, res) => {
     const data = JSON.parse(text);
     dynamicAccessToken = data.access_token;
 
-    return res.send("Token acquired!");
+    return res.redirect("https://pinterval.onrender.com");
   } catch (e) {
     console.error(e);
     res.status(500).send("OAuth error");
@@ -113,27 +114,61 @@ async function fetchWithTimeout(url, opt = {}) {
   }
 }
 
+function pickBestImageVariant(images) {
+  if (!images || typeof images !== "object") return null;
+
+  let bestUrl = null;
+  let bestScore = -1;
+
+  for (const [key, value] of Object.entries(images)) {
+    if (!value || !value.url) continue;
+
+    let score = 0;
+    const w = typeof value.width === "number" ? value.width : null;
+    const h = typeof value.height === "number" ? value.height : null;
+
+    if (w && h) {
+      // width/height がある場合は解像度で評価
+      score = w * h;
+    } else {
+      // フィールドに width/height が無い場合、キー名から数値を推測（例: "orig", "1200x", "600x900"）
+      const m = String(key).match(/(\d+)/);
+      if (m) {
+        score = parseInt(m[1], 10);
+      } else {
+        // 数字が取れないもの（"orig" など）は適度に高めのスコアを与える
+        score = 999999;
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestUrl = value.url;
+    }
+  }
+
+  return bestUrl;
+}
+
 function pickImageUrlFromPin(pin) {
   if (!pin || typeof pin !== "object") return null;
 
+  // Pinterest API v5 の仕様上、media.images に複数バリアントが入るため
+  // その中から「一番大きいもの」を選ぶ。
   const mediaImages = pin.media?.images;
   if (mediaImages) {
-    for (const v of Object.values(mediaImages)) {
-      if (v?.url) return v.url;
-    }
+    const best = pickBestImageVariant(mediaImages);
+    if (best) return best;
   }
 
+  // 古い形式 / 互換フィールド images に対しても同様のロジックを適用
   const images = pin.images;
   if (images) {
-    const preferred = ['orig','1200x','1000x','800x','600x','400x','236x','150x150'];
-    for (const key of preferred) {
-      if (images[key]?.url) return images[key].url;
-    }
-    for (const v of Object.values(images)) {
-      if (v?.url) return v.url;
-    }
+    const best = pickBestImageVariant(images);
+    if (best) return best;
   }
 
+  // フォールバック
   if (pin.image_url) return pin.image_url;
   if (pin.thumbnail_url) return pin.thumbnail_url;
 
@@ -153,6 +188,59 @@ function normalizePinsFromPinterest(json) {
       };
     })
     .filter((p) => !!p.image);
+}
+
+// Pinterest v5 API はページングに bookmark を使う。
+// limit まで複数ページを取得して正規化して返す。
+async function fetchPinsPaged({ endpointBase, accessToken, limit, timeoutMs = 10000 }) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 0, 1), 500);
+  const pageSize = Math.min(safeLimit, 50);
+
+  /** @type {Array<{id:string,title:string,link:string|null,image:string}>} */
+  const out = [];
+  const seen = new Set();
+
+  let bookmark = null;
+  let loops = 0;
+
+  while (out.length < safeLimit && loops < 50) {
+    loops += 1;
+
+    const params = new URLSearchParams({ page_size: String(pageSize) });
+    if (bookmark) params.set('bookmark', String(bookmark));
+
+    const endpoint = `${endpointBase}?${params.toString()}`;
+    const pinterestRes = await fetchWithTimeout(endpoint, {
+      timeoutMs,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    if (!pinterestRes.ok) {
+      const text = await pinterestRes.text().catch(() => '');
+      const err = new Error(`Pinterest API error: ${pinterestRes.status}`);
+      // @ts-ignore
+      err.details = text;
+      throw err;
+    }
+
+    const json = await pinterestRes.json();
+    const normalized = normalizePinsFromPinterest(json);
+    for (const p of normalized) {
+      if (out.length >= safeLimit) break;
+      if (seen.has(p.id)) continue;
+      seen.add(p.id);
+      out.push(p);
+    }
+
+    // bookmark が無い/空なら終了
+    bookmark = json?.bookmark || json?.next_bookmark || null;
+    if (!bookmark) break;
+  }
+
+  return out.slice(0, safeLimit);
 }
 
   
@@ -220,34 +308,79 @@ app.get('/api/me/pins', async (req, res) => {
     });
   }
 
-  const rawLimit = Number(req.query.limit || 120);
-  const limit = Math.min(Math.max(rawLimit, 1), 120);
-
-  const params = new URLSearchParams({
-    page_size: String(Math.min(limit, 50))
-  });
-
   try {
-    const endpoint = `https://api.pinterest.com/v5/pins?${params.toString()}`;
-    const pinterestRes = await fetchWithTimeout(endpoint, {
-      timeoutMs: 10000,
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`
-      }
-    });
+    // NOTE:
+    // Pinterest v5 の /pins は「自分が作成したピン」系に寄りやすく、
+    // 「保存したピン（各ボードに保存されているピン）」を一括で返さないことがある。
+    // そのため「すべてのピン」は、ボード一覧→各ボードの pins を集約して返す。
 
-    if (!pinterestRes.ok) {
-      const text = await pinterestRes.text();
-      console.error("Pinterest my pins API error:", pinterestRes.status, text);
-      return res.status(502).json({ ok: false, error: "Pinterest API error (pins)" });
+    const rawLimit = Number(req.query.limit || 120);
+    const limit = Math.min(Math.max(rawLimit, 1), 500);
+
+    // 1) ボード一覧取得（最大100件+bookmark対応）
+    /** @type {Array<{id:string,name:string}>} */
+    const boards = [];
+    let bookmark = null;
+    let loops = 0;
+
+    while (boards.length < 500 && loops < 20) {
+      loops += 1;
+      const params = new URLSearchParams({ page_size: '100' });
+      if (bookmark) params.set('bookmark', String(bookmark));
+      const endpoint = `https://api.pinterest.com/v5/boards?${params.toString()}`;
+      const pinterestRes = await fetchWithTimeout(endpoint, {
+        timeoutMs: 10000,
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${accessToken}`
+        }
+      });
+      if (!pinterestRes.ok) {
+        const text = await pinterestRes.text().catch(() => '');
+        console.error('Pinterest boards API error:', pinterestRes.status, text);
+        return res.status(502).json({ ok: false, error: 'Pinterest API error (boards)' });
+      }
+      const json = await pinterestRes.json();
+      const items = Array.isArray(json?.items) ? json.items : [];
+      for (const b of items) {
+        if (!b?.id) continue;
+        boards.push({ id: String(b.id), name: b.name || '' });
+      }
+      bookmark = json?.bookmark || json?.next_bookmark || null;
+      if (!bookmark) break;
     }
 
-    const json = await pinterestRes.json();
-    const normalized = normalizePinsFromPinterest(json);
-    const items = normalized.slice(0, limit);
+    if (!boards.length) {
+      return res.json({ ok: true, items: [] });
+    }
 
-    return res.json({ ok: true, items });
+    // 2) 各ボードの pins を順に集約（上限 limit）
+    /** @type {Array<{id:string,title:string,link:string|null,image:string}>} */
+    const out = [];
+    const seen = new Set();
+
+    for (const b of boards) {
+      if (out.length >= limit) break;
+      try {
+        const pins = await fetchPinsPaged({
+          endpointBase: `https://api.pinterest.com/v5/boards/${encodeURIComponent(b.id)}/pins`,
+          accessToken,
+          limit: Math.min(200, limit - out.length),
+          timeoutMs: 10000
+        });
+        for (const p of pins) {
+          if (out.length >= limit) break;
+          if (seen.has(p.id)) continue;
+          seen.add(p.id);
+          out.push(p);
+        }
+      } catch (e) {
+        // 一部ボードが失敗しても全体は継続
+        console.warn('Board pins fetch failed:', b.id, e?.message || e);
+      }
+    }
+
+    return res.json({ ok: true, items: out.slice(0, limit) });
   } catch (err) {
     console.error("Pinterest my pins request failed:", err);
     return res.status(502).json({ ok: false, error: "Pinterest my pins request failed" });
@@ -269,32 +402,16 @@ app.get('/api/boards/:boardId/pins', async (req, res) => {
   }
 
   const rawLimit = Number(req.query.limit || 120);
-  const limit = Math.min(Math.max(rawLimit, 1), 120);
+  const limit = Math.min(Math.max(rawLimit, 1), 500);
   const boardId = req.params.boardId;
 
-  const params = new URLSearchParams({
-    page_size: String(Math.min(limit, 50))
-  });
-
   try {
-    const endpoint = `https://api.pinterest.com/v5/boards/${encodeURIComponent(boardId)}/pins?${params.toString()}`;
-    const pinterestRes = await fetchWithTimeout(endpoint, {
-      timeoutMs: 10000,
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`
-      }
+    const items = await fetchPinsPaged({
+      endpointBase: `https://api.pinterest.com/v5/boards/${encodeURIComponent(boardId)}/pins`,
+      accessToken,
+      limit,
+      timeoutMs: 10000
     });
-
-    if (!pinterestRes.ok) {
-      const text = await pinterestRes.text();
-      console.error("Pinterest board pins API error:", pinterestRes.status, text);
-      return res.status(502).json({ ok: false, error: "Pinterest API error (board pins)" });
-    }
-
-    const json = await pinterestRes.json();
-    const normalized = normalizePinsFromPinterest(json);
-    const items = normalized.slice(0, limit);
 
     return res.json({ ok: true, items });
   } catch (err) {
@@ -362,6 +479,92 @@ app.get('/api/search', async (req, res) => {
   } catch (err) {
     console.error("Pinterest API request failed:", err);
     return res.status(502).json({ ok: false, error: "Pinterest API request failed" });
+  }
+});
+
+/* ============================================================
+   /api/image-proxy - 画像の同一オリジンプロキシ
+
+   目的:
+   - ブラウザ側で canvas を用いたピクセル変換（グレースケール等）を
+     行う際、外部画像（Pinterest / Unsplash など）を同一オリジンとして
+     読み込めるようにする。
+
+   セキュリティ:
+   - オープンプロキシ化を避けるため、取得可能なホストを制限する。
+============================================================ */
+const ALLOWED_IMAGE_HOST_SUFFIXES = [
+  '.pinimg.com',
+  '.pinterest.com',
+  '.unsplash.com'
+];
+
+function isAllowedImageHost(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  return ALLOWED_IMAGE_HOST_SUFFIXES.some((suf) => h.endsWith(suf));
+}
+
+app.get('/api/image-proxy', async (req, res) => {
+  const raw = String(req.query.url || '').trim();
+  if (!raw) return res.status(400).send('url is required');
+
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return res.status(400).send('invalid url');
+  }
+
+  if (!(u.protocol === 'https:' || u.protocol === 'http:')) {
+    return res.status(400).send('unsupported protocol');
+  }
+
+  if (!isAllowedImageHost(u.hostname)) {
+    return res.status(403).send('host not allowed');
+  }
+
+  try {
+    const upstream = await fetchWithTimeout(raw, {
+      timeoutMs: 15000,
+      headers: {
+        // 画像の取得を明示（上流の挙動が変わっても安全側に）
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'User-Agent': 'Pinterval/1.0 (image-proxy)'
+      }
+    });
+
+    if (!upstream.ok) {
+      const text = await upstream.text().catch(() => '');
+      console.error('Image proxy upstream error:', upstream.status, text);
+      return res.status(502).send('upstream error');
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    const contentLength = upstream.headers.get('content-length');
+    const len = contentLength ? Number(contentLength) : 0;
+    // 安全弁: 極端に大きいファイルは拒否（メモリ/帯域対策）
+    if (len && len > 25 * 1024 * 1024) {
+      return res.status(413).send('image too large');
+    }
+
+    res.status(200);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    // undici の body は Web ReadableStream
+    if (upstream.body) {
+      Readable.fromWeb(upstream.body).pipe(res);
+      return;
+    }
+
+    const ab = await upstream.arrayBuffer();
+    return res.end(Buffer.from(ab));
+
+  } catch (err) {
+    console.error('Image proxy error:', err);
+    return res.status(502).send('image proxy failed');
   }
 });
 
