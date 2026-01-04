@@ -185,6 +185,7 @@ input:disabled,select:disabled{opacity:0.6}
   z-index: 1; /* 画像が背景より確実に上になるように */
   align-items: stretch;
   justify-items: stretch;
+  pointer-events: none; /* 画像領域がUI操作を邪魔しないように */
 }
 
 /* グリッドの各セル（画像の重なり防止） */
@@ -210,9 +211,30 @@ input:disabled,select:disabled{opacity:0.6}
 ============================================ */
 /* 旧: viewer 直下の img は使わず、viewer-grid 内で表示 */
 
-.controls{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);display:flex;gap:14px;opacity:0;transition:opacity .2s ease}
+.controls{
+  position:absolute;
+  left:50%;
+  bottom:24px;
+  transform:translateX(-50%);
+  display:flex;
+  gap:14px;
+  opacity:0;
+  transition:opacity .2s ease;
+  z-index:30; /* viewer-gridより前面に */
+  pointer-events:auto;
+}
 .viewer:hover .controls{opacity:1}
-.ctrl{font-size:20px;width:48px;height:48px;border-radius:24px;border:none;background:rgba(0,0,0,.55);color:#fff;backdrop-filter: blur(4px);cursor:pointer}
+.ctrl{
+  font-size:20px;
+  width:48px;
+  height:48px;
+  border-radius:24px;
+  border:1px solid rgba(255,255,255,.15);
+  background:rgba(0,0,0,.55);
+  color:#fff;
+  backdrop-filter: blur(4px);
+  cursor:pointer;
+}
 .ctrl:hover{background:rgba(0,0,0,.75)}
 
 /* mobile hamburger bar (viewer overlay) */
