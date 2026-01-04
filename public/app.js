@@ -87,12 +87,19 @@ function applyGridLayout() {
   dom.viewerGrid.innerHTML = '';
   viewerImgs = [];
   for (let i = 0; i < count; i++) {
+    // NOTE: 画像要素が何らかのCSS（position:absolute など）で
+    // グリッド配置されず重なるケースを避けるため、セル要素に入れる。
+    const cell = document.createElement('div');
+    cell.className = 'viewer-cell';
+
     const img = document.createElement('img');
     img.className = 'viewer-img';
     img.decoding = 'async';
     img.loading = 'eager';
     initViewerImageVisibility(img);
-    dom.viewerGrid.appendChild(img);
+
+    cell.appendChild(img);
+    dom.viewerGrid.appendChild(cell);
     viewerImgs.push(img);
   }
 }
